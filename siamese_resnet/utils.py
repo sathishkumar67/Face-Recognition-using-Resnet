@@ -3,6 +3,41 @@ import os
 import zipfile
 from tqdm import tqdm
 
+
+
+def zip_dir(folder_path: str, output_zip: str) -> None:
+    """
+    Compresses the contents of folder_path into a ZIP file at output_zip with a progress bar.
+
+    Parameters:
+    - folder_path (str): The path to the folder to be zipped.
+    - output_zip (str): The path where the ZIP archive will be created.
+    """
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(output_zip), exist_ok=True)
+    
+    # Collect all files and calculate total size
+    file_list = []
+    total_size = 0
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            abs_filepath = os.path.join(root, file)
+            arcname = os.path.relpath(abs_filepath, start=folder_path)
+            file_size = os.path.getsize(abs_filepath)
+            total_size += file_size
+            file_list.append((abs_filepath, arcname, file_size))
+    
+    # Create the ZIP file with progress bar
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+        with tqdm(total=total_size, unit='B', unit_scale=True, desc="Zipping") as pbar:
+            for abs_filepath, arcname, file_size in file_list:
+                zf.write(abs_filepath, arcname)
+                pbar.update(file_size)
+    
+    print(f"Created ZIP archive: {output_zip}")
+
+
+
 def unzip_file(zip_path: str, target_dir: str) -> None:
     """
     Unzips the specified zip file into the target directory with a progress bar.
