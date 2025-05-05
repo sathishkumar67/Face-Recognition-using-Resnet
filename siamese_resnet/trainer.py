@@ -37,7 +37,7 @@ def train_model(model, device, train_loader, val_loader, criterion, optimizer,
                                             for t in batch.values())
 
                 # Mixed precision forward
-                with torch.autocast(device_type=device, dtype=torch.float16):
+                with torch.autocast(device_type=f"{device.type}:{device.index}", dtype=torch.float16):
                     anchor_emb = model(anchor)
                     positive_emb = model(positive)
                     negative_emb = model(negative)
