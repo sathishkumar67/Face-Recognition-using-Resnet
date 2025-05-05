@@ -14,34 +14,22 @@ from collections import defaultdict
 
 def triplet_collate_fn(batch):
     """Optimized collate function for triplet face recognition
-    Features:
-    - Zero-copy numpy to tensor conversion
-    - Batch-wise normalization (3x faster than per-image)
-    - Channel-first conversion
-    - FP16/FP32 compatibility
     """
     # Separate components
     anchors, positives, negatives = [], [], []
     
+    # Process each item in the batch
+    # and append to separate lists
     for item in batch:
         anchors.append(item['anchor'])
         positives.append(item['positive'])
         negatives.append(item['negative'])
     
-    def process_batch(imgs):
-        """Process a batch of images (numpy arrays)"""
-        # Convert to tensor (no copy)
-        batch_tensor = torch.as_tensor(np.stack(imgs), dtype=torch.float32).permute(0, 3, 1, 2)  
-        # Normalize to [0, 1] (no copy)
-        # Note: This is a zero-copy operation, as the data is already in the range [0, 255]
-        batch_tensor.div_(255)  # [0,1]
-    
-        return batch_tensor
-    
+    # Convert to tensor (no copy)
     return {
-        'anchor': process_batch(anchors),
-        'positive': process_batch(positives),
-        'negative': process_batch(negatives)
+        'anchor': torch.stack(anchors, dim=0),
+        'positive': torch.stack(positives, dim=0),
+        'negative': torch.stack(negatives, dim=0)
     }
 
 
@@ -274,25 +262,51 @@ class TripletDatasetGenerator:
 
 
 
+import cv2
+import torch
+from torch.utils.data import Dataset
 class TripletDataset(Dataset):
     """Optimized dataset loader with zero in-memory storage"""
     
     def __init__(self, triplets):
         self.triplets = triplets
+        self.num_triplets = len(triplets)
+        self.triplets_list = []
+
+        # Preload the triplet images
+        for i in range(self.num_triplets):
+            a_path, p_path, n_path = self.triplets[i]
+            anchor_img, positive_img, negative_img = cv2.cvtColor(cv2.imread(a_path), cv2.COLOR_BGR2RGB), cv2.cvtColor(cv2.imread(p_path), cv2.COLOR_BGR2RGB), cv2.cvtColor(cv2.imread(n_path), cv2.COLOR_BGR2RGB)
+            if anchor_img.shape != (224, 224, 3):
+                anchor_img = cv2.resize(anchor_img, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+            if positive_img.shape != (224, 224, 3):
+                positive_img = cv2.resize(positive_img, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+            if negative_img.shape != (224, 224, 3):
+                negative_img = cv2.resize(negative_img, (224, 224), interpolation=cv2.INTER_LANCZOS4)
+                
+            # convert to tensor (no copy)
+            anchor_img = torch.as_tensor(anchor_img, dtype=torch.float32).permute(2, 0, 1)
+            positive_img = torch.as_tensor(positive_img, dtype=torch.float32).permute(2, 0, 1)
+            negative_img = torch.as_tensor(negative_img, dtype=torch.float32).permute(2, 0, 1)
+            
+            # normalize to [0, 1] (no copy)
+            anchor_img.div_(255)
+            positive_img.div_(255)
+            negative_img.div_(255)
+            
+            # Append to the list
+            self.triplets_list.append((anchor_img, positive_img, negative_img))
         
     def __len__(self):
         return len(self.triplets)
     
     def __getitem__(self, idx):
         """OpenCV-based loading with minimal preprocessing"""
-        a_path, p_path, n_path = self.triplets[idx]
-        
-        def load_img(path):
-            img = cv2.imread(path)
-            return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Essential for pretrained models
-            
+        # Load the triplet images
+        anchor_img, positive_img, negative_img = self.triplets_list[idx]
+        # Return the triplet images as a dictionary
         return {
-            'anchor': load_img(a_path),
-            'positive': load_img(p_path),
-            'negative': load_img(n_path)
+            'anchor': anchor_img,
+            'positive': positive_img,
+            'negative': negative_img
         }
