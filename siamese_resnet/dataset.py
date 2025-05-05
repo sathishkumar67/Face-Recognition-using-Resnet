@@ -5,6 +5,8 @@ import cv2
 import random
 from tqdm import tqdm
 from mtcnn import MTCNN
+from torch.utils.data import Dataset
+from collections import defaultdict
 
 
 def split_dataset(
@@ -91,12 +93,15 @@ def split_dataset(
     # Cleanup original data
     shutil.rmtree(root_dir)
     print("\n✅ Original dataset directory removed.")
+
+
 def _get_valid_identities(root_dir: str) -> list:
     """Get identities with valid image directories"""
     return [
         identity for identity in os.listdir(root_dir)
         if os.path.isdir(os.path.join(root_dir, identity))
     ]
+
 
 def _split_identities(
     identities: list,
@@ -114,6 +119,7 @@ def _split_identities(
         identities[val_end:]
     )
 
+
 def _get_image_paths(identity_path: str) -> list:
     """Get valid image paths for an identity"""
     return [
@@ -121,6 +127,7 @@ def _get_image_paths(identity_path: str) -> list:
         for img in os.listdir(identity_path)
         if img.lower().endswith(('.jpg', '.png', '.jpeg'))
     ]
+
 
 def _process_and_save_image(
     image_path: str,
@@ -156,6 +163,7 @@ def _process_and_save_image(
         print(f"⚠️ Error processing {image_path}: {str(e)}")
         return "skipped"
 
+
 def _print_split_stats(split_name: str, valid_count: int, skipped_count: int, save_dir: str) -> None:
     """Print statistics for processed split"""
     print(f"\n{split_name.capitalize()} Set Summary:")
@@ -163,3 +171,90 @@ def _print_split_stats(split_name: str, valid_count: int, skipped_count: int, sa
     print(f"⏭️ Skipped images (no face detected/errors): {skipped_count}")
     print(f"📊 Total images processed: {valid_count + skipped_count}")
     print(f"📁 Output directory: {os.path.abspath(save_dir)}/{split_name}\n")
+
+    
+    
+
+class TripletDatasetGenerator:
+    """Professional-grade dataset handler with optimal splits and caching"""
+    
+    def __init__(self, data_root, split_ratios=(0.8, 0.1, 0.1), triplets_per_identity=10):
+        self.data_root = data_root
+        self.split_ratios = split_ratios
+        self.triplets_per_identity = triplets_per_identity
+        self.identity_map = self._build_identity_map()
+        self.identities = list(self.identity_map.keys())
+        random.shuffle(self.identities)
+        
+    def _build_identity_map(self):
+        """Efficient directory scanning with validity checks"""
+        identity_map = defaultdict(list)
+        for identity in os.listdir(self.data_root):
+            identity_dir = os.path.join(self.data_root, identity)
+            if os.path.isdir(identity_dir):
+                valid_images = [f for f in os.listdir(identity_dir) 
+                            if f.lower().endswith(('.jpg', '.jpeg'))]
+                if len(valid_images) >= 2:  # Minimum for triplet creation
+                    identity_map[identity] = valid_images
+        return identity_map
+    
+    def create_splits(self):
+        """Stratified split preserving class distribution"""
+        total = len(self.identities)
+        train_end = int(total * self.split_ratios[0])
+        val_end = train_end + int(total * self.split_ratios[1])
+        
+        return {
+            'train': self.identities[:train_end],
+            'val': self.identities[train_end:val_end],
+            'test': self.identities[val_end:]
+        }
+    
+    def generate_triplets(self, split_identities):
+        """Efficient triplet generation with hard negative mining preparation"""
+        triplets = []
+        identity_list = list(split_identities)
+        
+        for identity in identity_list:
+            samples = self.identity_map[identity]
+            for _ in range(self.triplets_per_identity):
+                # Anchor-Positive pair
+                anchor, positive = random.sample(samples, 2)
+                
+                # Hard Negative: Different identity from same split
+                neg_identity = random.choice(identity_list)
+                while neg_identity == identity:
+                    neg_identity = random.choice(identity_list)
+                negative = random.choice(self.identity_map[neg_identity])
+                
+                triplets.append((
+                    os.path.join(self.data_root, identity, anchor),
+                    os.path.join(self.data_root, identity, positive),
+                    os.path.join(self.data_root, neg_identity, negative)
+                ))
+        return triplets
+
+
+
+class TripletDataset(Dataset):
+    """Optimized dataset loader with zero in-memory storage"""
+    
+    def __init__(self, triplets):
+        self.triplets = triplets
+        
+    def __len__(self):
+        return len(self.triplets)
+    
+    def __getitem__(self, idx):
+        """OpenCV-based loading with minimal preprocessing"""
+        a_path, p_path, n_path = self.triplets[idx]
+        
+        def load_img(path):
+            img = cv2.imread(path)
+            return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Essential for pretrained models
+            
+        return {
+            'anchor': load_img(a_path),
+            'positive': load_img(p_path),
+            'negative': load_img(n_path)
+        }
