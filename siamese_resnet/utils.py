@@ -3,7 +3,23 @@ import os
 import zipfile
 from tqdm import tqdm
 
+def zip_directory_with_progress(src_dir: str, output_zip: str):
+    """
+    Zips the contents of src_dir into output_zip, showing a progress bar.
+    """
+    # Gather all file paths
+    file_paths = []
+    for root, _, files in os.walk(src_dir):
+        for file in files:
+            full_path = os.path.join(root, file)
+            file_paths.append(full_path)
 
+    # Create the zip file and write files with progress
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for file in tqdm(file_paths, desc="Zipping files"):
+            # Write file to the zip archive, preserving directory structure
+            arcname = os.path.relpath(file, start=src_dir)
+            zipf.write(file, arcname)
 
 def zip_dir(folder_path: str, output_zip: str):
     """
