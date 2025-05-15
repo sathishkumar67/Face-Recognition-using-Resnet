@@ -4,7 +4,7 @@ import torchvision
 
 
 class SiameseResNet(nn.Module):
-    def __init__(self, embedding_dim=256):
+    def __init__(self):
         super(SiameseResNet, self).__init__()
         # Load pretrained ResNet18
         self.backbone = torchvision.models.resnet18(weights="IMAGENET1K_V1", progress=True)
