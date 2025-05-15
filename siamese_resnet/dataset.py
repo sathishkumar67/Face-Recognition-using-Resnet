@@ -262,9 +262,6 @@ class TripletDatasetGenerator:
 
 
 
-import cv2
-import torch
-from torch.utils.data import Dataset
 class TripletDataset(Dataset):
     """Optimized dataset loader with zero in-memory storage"""
     

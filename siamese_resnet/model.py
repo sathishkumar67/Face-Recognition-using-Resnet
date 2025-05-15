@@ -10,7 +10,7 @@ class SiameseResNet(nn.Module):
         self.backbone = torchvision.models.resnet18(weights="IMAGENET1K_V1", progress=True)
         
         # Replace the final fully connected layer
-        self.backbone.fc = nn.Linear(512, embedding_dim)  # 512 -> 256
+        self.backbone.fc = nn.Identity()
 
     def forward(self, x):
         return self.backbone(x)
